@@ -22,3 +22,8 @@ export class App {
 }
 
 export class MarkdownView {}
+
+export function parseLinktext(link: string) {
+  const index = link.indexOf("#");
+  return index < 0 ? { path: link, subpath: "" } : { path: link.slice(0, index), subpath: link.slice(index) };
+}

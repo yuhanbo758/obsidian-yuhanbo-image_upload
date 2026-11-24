@@ -1,9 +1,15 @@
-# Obsidian Image Auto Upload Plugin
+# yuhanbo-image-upload
 
-这是一个支持 PicGo、PicList、PicGo-Core 上传图片到图床的工具
-**更新插件后记得重启一下 Obsidian**
+这是基于 [renmu123 的 Image auto upload](https://github.com/renmu123/obsidian-image-auto-upload-plugin) 开发的桌面版，保留原项目的 MIT 许可。支持通过 PicGo、PicList 和 PicGo-Core 上传图片。
 
-**未在 Mac 进行过测试**
+手动安装时，将构建出的 `main.js` 和 `manifest.json` 放入笔记库下的 `.obsidian/plugins/yuhanbo-image-upload/`，再到 Obsidian 的「第三方插件」中启用 `yuhanbo-image-upload`。
+
+## 隐私与外部服务
+
+- 本机 PicGo 或 PicList 通过 HTTP 接收选中的附件路径。远程服务器模式会把图片文件内容发送到你配置的 PicList 地址。PicGo-Core 通过本机命令访问附件和系统剪贴板。拖拽上传可读取你从库外主动拖入的文件。
+- 图片由你配置的上传器转交给所选图床，账号、费用及图片可见性由图床决定。使用批量下载命令时，插件会访问原图片地址并将下载文件保存到笔记库。
+- 上传器设置保存在本地，若自定义服务地址含令牌，也会随地址保存。插件不单独保存图床密码，也不收集遥测数据。请妥善保管插件的数据文件和自定义服务地址。
+
 
 # 开始
 
@@ -40,13 +46,7 @@ image-auto-upload: true
 
 ## 批量上传一个文件中的所有图像文件
 
-输入 `ctrl+P` 呼出面板，输入 `upload all images`，点击回车，就会自动开始上传。
-
-路径解析优先级，会依次按照优先级查找：
-
-1. 绝对路径，指基于库的绝对路径
-2. 相对路径，以./或../开头
-3. 尽可能简短的形式
+打开笔记，通过 `Ctrl+P` 运行 **Upload all images**。命令上传笔记中的本地 Markdown 图片和 Wiki 图片嵌入，并逐一用图床返回的 URL 替换原引用。网络图片保持原样，同一个附件只上传一次，上传失败的图片保留原引用。
 
 ## 批量下载网络图片到本地
 
@@ -54,9 +54,7 @@ image-auto-upload: true
 
 ## 支持右键菜单上传图片
 
-~~只支持使用标准 md 语法下的基于当前笔记的相对路径。~~
-
-目前已支持标准 md 以及 wiki 格式。支持相对路径以及绝对路径，需要进行正确设置，不然会引发奇怪的问题
+在实时预览中右键点击笔记里的本地图片，选择 **上传**。插件按附件路径定位目标，同名的其他附件保持原样。
 
 ## 支持拖拽上传
 

@@ -27,7 +27,7 @@ export default {
     "Please input PicGo-Core path, default using environment variables",
   "Work on network": "Work on network",
   "Work on network Description":
-    "Allow upload network image by 'Upload all' command.\n Or when you paste, md standard image link in your clipboard will be auto upload.",
+    "Upload network images from Markdown links when pasting.",
   "Upload when clipboard has image and text together":
     "Upload when clipboard has image and text together",
   "When you copy, some application like Excel will image and text to clipboard, you can upload or not.":
@@ -53,5 +53,13 @@ export default {
     "File has been changedd, download failure",
   "Warning: upload files is different of reciver files from api":
     "Warning: upload files num is different of reciver files from api",
+  "Image upload is already in progress": "Image upload is already in progress.",
+  "Wait for Obsidian to index the note, then retry": "Wait for Obsidian to index the note, then retry.",
+  "No local images found in this note": "No local images found in this note.",
+  "Image upload failed. Check the uploader settings": "Image upload failed. Check the uploader settings.",
+  "The note changed during upload. Links were not replaced": "The note changed during upload. Links were not replaced.",
+  "Image upload summary": "Uploaded {uploaded} local image(s). Failed {failed}.",
+  "Could not update image links in the note": "Could not update image links in the note.",
+  "Could not trash the local image": "Could not trash the local image.",
   upload: "Upload",
 };

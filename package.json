@@ -1,6 +1,6 @@
 {
-  "name": "obsidian-image-auto-upload-plugin",
-  "version": "4.1.0",
+  "name": "obsidian-yuhanbo-image_upload",
+  "version": "4.1.1",
   "type": "module",
   "description": "This plugin uploads images from your clipboard by picGo and embeds uploaded image to your note",
   "main": "main.js",
@@ -8,7 +8,8 @@
     "dev": "rollup --config rollup.config.js -w",
     "build": "pnpm run typecheck && rollup --config rollup.config.js",
     "typecheck": "tsc --noEmit -p tsconfig.json --composite false",
-    "test": "vitest run"
+    "test": "vitest run",
+    "version": "node scripts/prepare-release.mjs --from-package && git add manifest.json versions.json"
   },
   "keywords": [
     "obsidian.md",

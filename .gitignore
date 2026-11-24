@@ -11,3 +11,11 @@ main.js
 
 # ignore
 data.json
+.obsidian/
+.env
+.env.*
+*.pem
+*.pfx
+*.key
+*.log
+coverage/

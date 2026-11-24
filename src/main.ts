@@ -5,14 +5,14 @@ import {
   Menu,
   MenuItem,
   TFile,
-  normalizePath,
   Notice,
   addIcon,
   MarkdownFileInfo,
 } from "obsidian";
-import { resolve, basename, dirname } from "path-browserify";
 
-import { isAssetTypeAnImage, arrayToObject } from "./utils";
+import { isAssetTypeAnImage } from "./utils";
+import { formatUploadedImage, getLocalImageReferences, getUploadedUrl } from "./localImages";
+import type { LocalImageReference } from "./localImages";
 import { downloadAllImageFiles } from "./download";
 import { UploaderManager } from "./uploader/index";
 import { PicGoDeleter } from "./deleter";
@@ -27,9 +27,10 @@ export default class imageAutoUploadPlugin extends Plugin {
   helper: Helper;
   editor: Editor;
   picGoDeleter: PicGoDeleter;
+  private readonly uploadsInProgress = new WeakSet<TFile>();
 
   async loadSettings() {
-    this.settings = Object.assign(DEFAULT_SETTINGS, await this.loadData());
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
   }
 
   async saveSettings() {
@@ -57,10 +58,10 @@ export default class imageAutoUploadPlugin extends Plugin {
       id: "Upload all images",
       name: "Upload all images",
       checkCallback: (checking: boolean) => {
-        let leaf = this.app.workspace.getActiveViewOfType(MarkdownView);
-        if (leaf) {
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (view?.file) {
           if (!checking) {
-            this.uploadAllFile();
+            void this.uploadNoteImages(view, view.file);
           }
           return true;
         }
@@ -119,6 +120,13 @@ export default class imageAutoUploadPlugin extends Plugin {
           if (this.app.workspace.getLeavesOfType("markdown").length === 0) {
             return;
           }
+          if (info instanceof MarkdownView && info.file) {
+            const content = editor.getValue();
+            const offset = editor.posToOffset(editor.getCursor());
+            const reference = getLocalImageReferences(this.app, info.file, content)
+              ?.find(ref => ref.start <= offset && offset < ref.end);
+            if (reference) this.addUploadMenu(menu, info, reference.file);
+          }
           const selection = editor.getSelection();
           if (selection) {
             const markdownRegex = /!\[.*\]\((.*)\)/g;
@@ -126,7 +134,7 @@ export default class imageAutoUploadPlugin extends Plugin {
             if (markdownMatch && markdownMatch.length > 1) {
               const markdownUrl = markdownMatch[1];
               if (
-                this.settings.uploadedImages.find(
+                this.settings.uploadedImages?.find(
                   (item: { imgUrl: string }) => item.imgUrl === markdownUrl
                 )
               ) {
@@ -146,7 +154,7 @@ export default class imageAutoUploadPlugin extends Plugin {
         .setTitle(t("Delete image using PicList"))
         .onClick(async () => {
           try {
-            const selectedItem = this.settings.uploadedImages.find(
+            const selectedItem = this.settings.uploadedImages?.find(
               (item: { imgUrl: string }) => item.imgUrl === imgPath
             );
             if (selectedItem) {
@@ -175,200 +183,186 @@ export default class imageAutoUploadPlugin extends Plugin {
 
   registerFileMenu() {
     this.registerEvent(
-      this.app.workspace.on(
-        "file-menu",
-        (menu: Menu, file: TFile, source: string, leaf) => {
-          if (source === "canvas-menu") return false;
-          if (!isAssetTypeAnImage(file.path)) return false;
+      this.app.workspace.on("file-menu", (menu, file, source, leaf) => {
+        if (
+          source === "canvas-menu" ||
+          !(file instanceof TFile) ||
+          !isAssetTypeAnImage(file.path)
+        ) return;
 
-          menu.addItem((item: MenuItem) => {
-            item
-              .setTitle(t("upload"))
-              .setIcon("upload")
-              .onClick(() => {
-                if (!(file instanceof TFile)) {
-                  return false;
-                }
-                this.fileMenuUpload(file);
-              });
-          });
+        const view = leaf?.view instanceof MarkdownView
+          ? leaf.view
+          : this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (view?.file) this.addUploadMenu(menu, view, file);
+      })
+    );
+  }
+
+  private addUploadMenu(menu: Menu, view: MarkdownView, file: TFile) {
+    const note = view.file;
+    if (!note) return;
+
+    menu.addItem(item =>
+      item
+        .setTitle(t("upload"))
+        .setIcon("upload")
+        .onClick(() => this.uploadNoteImages(view, note, file))
+    );
+  }
+
+  private async uploadNoteImages(view: MarkdownView, note: TFile, target?: TFile) {
+    if (this.uploadsInProgress.has(note)) {
+      new Notice(t("Image upload is already in progress"));
+      return;
+    }
+    this.uploadsInProgress.add(note);
+
+    try {
+      const editor = this.getNoteEditorView(view, note)?.editor;
+      const snapshot = editor?.getValue() ?? await this.app.vault.read(note);
+      const references = getLocalImageReferences(this.app, note, snapshot);
+      if (!references) {
+        new Notice(t("Wait for Obsidian to index the note, then retry"));
+        return;
+      }
+
+      const selected = target ? references.filter(ref => ref.file === target) : references;
+      const groups = new Map<TFile, LocalImageReference[]>();
+      for (const reference of selected) {
+        const group = groups.get(reference.file);
+        if (group) group.push(reference);
+        else groups.set(reference.file, [reference]);
+      }
+
+      if (!groups.size) {
+        new Notice(t("No local images found in this note"));
+        return;
+      }
+
+      const uploader = this.getUploader();
+      const uploaded = new Map<TFile, string>();
+      for (const [file, refs] of groups) {
+        try {
+          // 每个附件单独请求，避免图床只返回部分 URL 时错配到其他附件。
+          const response = await uploader.upload([{
+            file,
+            path: file.path,
+            name: refs[0].name,
+            source: refs[0].source,
+          }]);
+          const url = response.success ? getUploadedUrl(response.result) : undefined;
+          if (url) uploaded.set(file, url);
+        } catch {
+          // 单张失败时保留原引用，其他附件继续上传。
         }
+      }
+
+      if (!uploaded.size) {
+        new Notice(t("Image upload failed. Check the uploader settings"));
+        return;
+      }
+
+      const changes = selected.flatMap(reference => {
+        const url = uploaded.get(reference.file);
+        if (!url) return [];
+        const text = formatUploadedImage(reference, this.handleName(reference.name), url);
+        return [{ ...reference, text }];
+      });
+
+      // 上传期间可能换笔记或编辑原文。只在应用改动前仍与快照一致时写回。
+      const editorView = this.getNoteEditorView(view, note);
+      const currentEditor = editorView?.editor;
+      const trash = this.settings.deleteSource ? this.getUnreferencedSources(note, uploaded, groups) : [];
+      let written = false;
+      if (currentEditor) {
+        if (currentEditor.getValue() === snapshot) {
+          currentEditor.transaction({
+            changes: changes.map(({ start, end, text }) => ({
+              from: currentEditor.offsetToPos(start),
+              to: currentEditor.offsetToPos(end),
+              text,
+            })),
+          });
+          written = true;
+        }
+      } else {
+        await this.app.vault.process(note, content => {
+          if (content !== snapshot) return content;
+          written = true;
+          return changes.reduceRight(
+            (text, change) => text.slice(0, change.start) + change.text + text.slice(change.end),
+            content
+          );
+        });
+      }
+
+      if (!written) {
+        new Notice(t("The note changed during upload. Links were not replaced"));
+        return;
+      }
+
+      new Notice(t("Image upload summary")
+        .replace("{uploaded}", String(uploaded.size))
+        .replace("{failed}", String(groups.size - uploaded.size)));
+
+      if (trash.length) {
+        // 先保存换链结果，再移除原图，避免磁盘上的笔记仍指向已移除的文件。
+        if (editorView) await editorView.save();
+        await this.trashSources(trash);
+      }
+    } catch {
+      new Notice(t("Could not update image links in the note"));
+    } finally {
+      this.uploadsInProgress.delete(note);
+    }
+  }
+
+  private getNoteEditorView(view: MarkdownView, note: TFile): MarkdownView | undefined {
+    if (view.file === note && view.getMode() === "source") return view;
+    return this.app.workspace.getLeavesOfType("markdown")
+      .map(leaf => leaf.view)
+      .find((candidate): candidate is MarkdownView =>
+        candidate instanceof MarkdownView &&
+        candidate.file === note &&
+        candidate.getMode() === "source"
+      );
+  }
+
+  private getUnreferencedSources(
+    note: TFile,
+    uploaded: ReadonlyMap<TFile, string>,
+    groups: ReadonlyMap<TFile, LocalImageReference[]>
+  ): TFile[] {
+    const indexedNotes = Object.entries(this.app.metadataCache.resolvedLinks);
+    // 写回前的索引包含旧嵌入。仅扣除本次将替换的引用，保留其他笔记仍在使用的附件。
+    return Array.from(uploaded.keys()).filter(file =>
+      indexedNotes.every(([path, links]) =>
+        (links[file.path] ?? 0) <= (path === note.path ? groups.get(file).length : 0)
       )
     );
   }
 
-  fileMenuUpload(file: TFile) {
-    let imageList: Image[] = [];
-    const fileArray = this.helper.getAllFiles();
-
-    for (const match of fileArray) {
-      const imageName = match.name;
-      const encodedUri = match.path;
-
-      const fileName = basename(decodeURI(encodedUri));
-
-      if (file && file.name === fileName) {
-        if (isAssetTypeAnImage(file.path)) {
-          imageList.push({
-            path: file.path,
-            name: imageName,
-            source: match.source,
-            file: file,
-          });
-        }
+  private async trashSources(files: TFile[]) {
+    for (const file of files) {
+      try {
+        await this.app.fileManager.trashFile(file);
+      } catch {
+        new Notice(t("Could not trash the local image"));
       }
     }
-
-    if (imageList.length === 0) {
-      new Notice(t("Can not find image file"));
-      return;
-    }
-
-    this.upload(imageList).then(res => {
-      if (!res.success) {
-        new Notice("Upload error");
-        return;
-      }
-
-      let uploadUrlList = res.result;
-      this.replaceImage(imageList, uploadUrlList);
-    });
   }
 
-  filterFile(fileArray: Image[]) {
-    const imageList: Image[] = [];
-
-    for (const match of fileArray) {
-      if (match.path.startsWith("http")) {
-        if (this.settings.workOnNetWork) {
-          if (
-            !this.helper.hasBlackDomain(
-              match.path,
-              this.settings.newWorkBlackDomains
-            )
-          ) {
-            imageList.push({
-              path: match.path,
-              name: match.name,
-              source: match.source,
-            });
-          }
-        }
-      } else {
-        imageList.push({
-          path: match.path,
-          name: match.name,
-          source: match.source,
-        });
-      }
-    }
-
-    return imageList;
-  }
-
-  /**
-   * 替换上传的图片
-   */
+  /** 剪贴板网络图片仍走原有的独立设置。 */
   replaceImage(imageList: Image[], uploadUrlList: string[]) {
     let content = this.helper.getValue();
 
-    imageList.map(item => {
-      const uploadImage = uploadUrlList.shift();
-
-      let name = this.handleName(item.name);
-      content = content.replaceAll(item.source, `![${name}](${uploadImage})`);
+    imageList.forEach((item, index) => {
+      const uploadImage = uploadUrlList[index];
+      const name = this.handleName(item.name);
+      content = content.replaceAll(item.source, () => "![" + name + "](" + uploadImage + ")");
     });
 
     this.helper.setValue(content);
-
-    if (this.settings.deleteSource) {
-      imageList.map(image => {
-        if (image.file && !image.path.startsWith("http")) {
-          this.app.fileManager.trashFile(image.file);
-        }
-      });
-    }
-  }
-
-  /**
-   * 上传所有图片
-   */
-  uploadAllFile() {
-    const activeFile = this.app.workspace.getActiveFile();
-    const fileMap = arrayToObject(this.app.vault.getFiles(), "name");
-    const filePathMap = arrayToObject(this.app.vault.getFiles(), "path");
-    let imageList: (Image & { file: TFile | null })[] = [];
-    const fileArray = this.filterFile(this.helper.getAllFiles());
-
-    for (const match of fileArray) {
-      const imageName = match.name;
-      const uri = decodeURI(match.path);
-
-      if (uri.startsWith("http")) {
-        imageList.push({
-          path: match.path,
-          name: imageName,
-          source: match.source,
-          file: null,
-        });
-      } else {
-        const fileName = basename(uri);
-        let file: TFile | undefined | null;
-        // 优先匹配绝对路径
-        if (filePathMap[uri]) {
-          file = filePathMap[uri];
-        }
-
-        // 相对路径
-        if ((!file && uri.startsWith("./")) || uri.startsWith("../")) {
-          const filePath = normalizePath(
-            resolve(dirname(activeFile.path), uri)
-          );
-
-          file = filePathMap[filePath];
-        }
-
-        // 尽可能短路径
-        if (!file) {
-          file = fileMap[fileName];
-        }
-
-        if (file) {
-          if (isAssetTypeAnImage(file.path)) {
-            imageList.push({
-              path: normalizePath(file.path),
-              name: imageName,
-              source: match.source,
-              file: file,
-            });
-          }
-        }
-      }
-    }
-
-    if (imageList.length === 0) {
-      new Notice(t("Can not find image file"));
-      return;
-    } else {
-      new Notice(`Have found ${imageList.length} images`);
-    }
-
-    this.upload(imageList).then(res => {
-      let uploadUrlList = res.result;
-      if (imageList.length !== uploadUrlList.length) {
-        new Notice(
-          t("Warning: upload files is different of reciver files from api")
-        );
-        return;
-      }
-      const currentFile = this.app.workspace.getActiveFile();
-      if (activeFile.path !== currentFile.path) {
-        new Notice(t("File has been changedd, upload failure"));
-        return;
-      }
-
-      this.replaceImage(imageList, uploadUrlList);
-    });
   }
 
   setupPasteHandler() {

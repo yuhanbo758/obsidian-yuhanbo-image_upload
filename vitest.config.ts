@@ -10,7 +10,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "virtual:obsidian": resolve(__dirname, "src/mocks/obsidian.ts"),
+      obsidian: resolve(__dirname, "src/mocks/obsidian.ts"),
     },
   },
 });

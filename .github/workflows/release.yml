@@ -1,76 +1,107 @@
-name: Build plugin
+name: Auto release Obsidian plugin
 
 on:
   push:
-    tags:
-      - "*"
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'test/**'
+      - 'scripts/prepare-release.mjs'
+      - 'manifest.json'
+      - 'versions.json'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.node-version'
+      - 'rollup.config.js'
+      - 'tsconfig*.json'
+      - 'vitest.config.ts'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
 
-env:
-  PLUGIN_NAME: dist
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: obsidian-plugin-release
+  cancel-in-progress: false
 
 jobs:
-  build:
+  release:
+    if: github.ref_name == github.event.repository.default_branch && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          run_install: false
+          fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version-file: ".node-version"
-          cache: "pnpm"
+          node-version: '24'
+          cache: pnpm
 
-      - name: Build
-        id: build
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare the release version
+        id: prepare
+        shell: bash
         run: |
-          pnpm install
+          set -euo pipefail
+          version="$(node scripts/prepare-release.mjs --sync-manifest)"
+          # 只用尚未占用的版本，避免复用已发布标签或手工创建的标签。
+          while git show-ref --verify --quiet "refs/tags/$version"; do
+            version="$(node scripts/prepare-release.mjs --bump-patch)"
+          done
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Test and build
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm test
           pnpm run build
-          mkdir ${{ env.PLUGIN_NAME }}
-          cp main.js manifest.json ${{ env.PLUGIN_NAME }}
-          zip -r ${{ env.PLUGIN_NAME }}.zip ${{ env.PLUGIN_NAME }}
-          ls
-          echo "::set-output name=tag_name::$(git tag --sort version:refname | tail -n 1)"
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
+          node --check main.js
+          git diff --check
+          test -s main.js
+          test -s manifest.json
+
+      - name: Commit version changes
+        id: commit
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ steps.prepare.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add manifest.json package.json versions.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: prepare release $RELEASE_VERSION [skip release]"
+            git push origin HEAD:main
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Attest the release assets
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          tag_name: ${{ github.ref }}
-          release_name: ${{ github.ref }}
-          draft: false
-          prerelease: false
-      - name: Upload zip file
-        id: upload-zip
-        uses: actions/upload-release-asset@v1
+          subject-path: |
+            main.js
+            manifest.json
+
+      - name: Publish the release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./${{ env.PLUGIN_NAME }}.zip
-          asset_name: ${{ env.PLUGIN_NAME }}-${{ steps.build.outputs.tag_name }}.zip
-          asset_content_type: application/zip
-      - name: Upload main.js
-        id: upload-main
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./main.js
-          asset_name: main.js
-          asset_content_type: text/javascript
-      - name: Upload manifest.json
-        id: upload-manifest
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./manifest.json
-          asset_name: manifest.json
-          asset_content_type: application/json
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.prepare.outputs.version }}
+          RELEASE_COMMIT: ${{ steps.commit.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_VERSION" main.js manifest.json \
+            --target "$RELEASE_COMMIT" --title "$RELEASE_VERSION" --generate-notes

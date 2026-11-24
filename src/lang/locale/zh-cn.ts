@@ -25,7 +25,7 @@ export default {
     "请输入 PicGo-Core path，默认使用环境变量",
   "Work on network": "应用网络图片",
   "Work on network Description":
-    "当你上传所有图片时，也会上传网络图片。以及当你进行黏贴时，剪切板中的标准 md 图片会被上传",
+    "粘贴时上传剪贴板中的 Markdown 网络图片链接。",
   "Upload when clipboard has image and text together":
     "当剪切板同时拥有文本和图片剪切板数据时是否上传图片",
   "When you copy, some application like Excel will image and text to clipboard, you can upload or not.":
@@ -47,5 +47,13 @@ export default {
   "File has been changedd, download failure": "当前文件已变更，下载失败",
   "Warning: upload files is different of reciver files from api":
     "警告：上传的文件与接口返回的文件数量不一致",
+  "Image upload is already in progress": "这篇笔记正在上传图片。",
+  "Wait for Obsidian to index the note, then retry": "请等待 Obsidian 更新笔记索引后重试。",
+  "No local images found in this note": "当前笔记中没有找到可上传的本地图片。",
+  "Image upload failed. Check the uploader settings": "图片上传失败，请检查上传器设置。",
+  "The note changed during upload. Links were not replaced": "上传期间笔记内容有变化，原图片引用已保留。",
+  "Image upload summary": "已上传 {uploaded} 张本地图片，失败 {failed} 张。",
+  "Could not update image links in the note": "无法更新笔记中的图片引用。",
+  "Could not trash the local image": "无法将本地原图移到回收站。",
   upload: "上传",
 };
