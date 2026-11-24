@@ -55,5 +55,9 @@ export default {
   "Image upload summary": "已上传 {uploaded} 张本地图片，失败 {failed} 张。",
   "Could not update image links in the note": "无法更新笔记中的图片引用。",
   "Could not trash the local image": "无法将本地原图移到回收站。",
-  upload: "上传",
+
+  "Replace images in other notes": "其他笔记替换成网络图片",
+  "Replace images in other notes description": "批量上传成功后，自动替换其他笔记中引用同一本地附件的图片链接。右键上传图片只更新当前笔记。",
+  "Other note replacement summary": "已更新其他 {updated} 篇笔记的图片链接，跳过 {skipped} 篇。",
+  upload: "上传图片",
 };

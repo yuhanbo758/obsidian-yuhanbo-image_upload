@@ -13,7 +13,8 @@ export interface LocalImageReference {
 export function getLocalImageReferences(
   { metadataCache }: App,
   note: TFile,
-  content: string
+  content: string,
+  imageFiles?: ReadonlySet<TFile>
 ): LocalImageReference[] | null {
   const cache = metadataCache.getFileCache(note);
   if (!cache) return null;
@@ -29,7 +30,7 @@ export function getLocalImageReferences(
     // 以 Obsidian 的解析结果为准，避免把同名附件、代码块或网络链接当作目标。
     const { path } = parseLinktext(embed.link);
     const file = metadataCache.getFirstLinkpathDest(path, note.path);
-    if (!file || !isAssetTypeAnImage(file.path)) continue;
+    if (!file || (imageFiles && !imageFiles.has(file)) || !isAssetTypeAnImage(file.path)) continue;
 
     const { start: from, end: to } = embed.position;
     const start = lineStarts[from.line] + from.col;
@@ -44,6 +45,19 @@ export function getLocalImageReferences(
     references.push({ file, name, source: embed.original, start, end });
   }
   return references.sort((first, second) => first.start - second.start);
+}
+
+export function getRelatedNotePaths(
+  { metadataCache }: App,
+  originPath: string,
+  imagePaths: ReadonlySet<string>
+): string[] {
+  // 用原生解析索引缩小读取范围。实际换链仍只处理解析到同一附件的图片嵌入。
+  return Object.entries(metadataCache.resolvedLinks)
+    .filter(([path, links]) =>
+      path !== originPath && Object.keys(links).some(link => imagePaths.has(link))
+    )
+    .map(([path]) => path);
 }
 
 export function getUploadedUrl(result: unknown): string | undefined {

@@ -11,7 +11,12 @@ import {
 } from "obsidian";
 
 import { isAssetTypeAnImage } from "./utils";
-import { formatUploadedImage, getLocalImageReferences, getUploadedUrl } from "./localImages";
+import {
+  formatUploadedImage,
+  getLocalImageReferences,
+  getRelatedNotePaths,
+  getUploadedUrl,
+} from "./localImages";
 import type { LocalImageReference } from "./localImages";
 import { downloadAllImageFiles } from "./download";
 import { UploaderManager } from "./uploader/index";
@@ -21,6 +26,12 @@ import { t } from "./lang/helpers";
 import { SettingTab, PluginSettings, DEFAULT_SETTINGS } from "./setting";
 
 import type { Image } from "./types";
+
+interface ImageLinkChange {
+  start: number;
+  end: number;
+  text: string;
+}
 
 export default class imageAutoUploadPlugin extends Plugin {
   settings: PluginSettings;
@@ -218,7 +229,7 @@ export default class imageAutoUploadPlugin extends Plugin {
     this.uploadsInProgress.add(note);
 
     try {
-      const editor = this.getNoteEditorView(view, note)?.editor;
+      const editor = this.getNoteEditorView(note, view)?.editor;
       const snapshot = editor?.getValue() ?? await this.app.vault.read(note);
       const references = getLocalImageReferences(this.app, note, snapshot);
       if (!references) {
@@ -262,41 +273,9 @@ export default class imageAutoUploadPlugin extends Plugin {
         return;
       }
 
-      const changes = selected.flatMap(reference => {
-        const url = uploaded.get(reference.file);
-        if (!url) return [];
-        const text = formatUploadedImage(reference, this.handleName(reference.name), url);
-        return [{ ...reference, text }];
-      });
-
-      // 上传期间可能换笔记或编辑原文。只在应用改动前仍与快照一致时写回。
-      const editorView = this.getNoteEditorView(view, note);
-      const currentEditor = editorView?.editor;
+      const changes = this.getUploadedImageChanges(selected, uploaded);
       const trash = this.settings.deleteSource ? this.getUnreferencedSources(note, uploaded, groups) : [];
-      let written = false;
-      if (currentEditor) {
-        if (currentEditor.getValue() === snapshot) {
-          currentEditor.transaction({
-            changes: changes.map(({ start, end, text }) => ({
-              from: currentEditor.offsetToPos(start),
-              to: currentEditor.offsetToPos(end),
-              text,
-            })),
-          });
-          written = true;
-        }
-      } else {
-        await this.app.vault.process(note, content => {
-          if (content !== snapshot) return content;
-          written = true;
-          return changes.reduceRight(
-            (text, change) => text.slice(0, change.start) + change.text + text.slice(change.end),
-            content
-          );
-        });
-      }
-
-      if (!written) {
+      if (!await this.writeImageChanges(note, snapshot, changes, view)) {
         new Notice(t("The note changed during upload. Links were not replaced"));
         return;
       }
@@ -305,9 +284,13 @@ export default class imageAutoUploadPlugin extends Plugin {
         .replace("{uploaded}", String(uploaded.size))
         .replace("{failed}", String(groups.size - uploaded.size)));
 
+      if (!target && this.settings.replaceInOtherNotes) {
+        await this.replaceImagesInOtherNotes(note, uploaded);
+      }
+
       if (trash.length) {
         // 先保存换链结果，再移除原图，避免磁盘上的笔记仍指向已移除的文件。
-        if (editorView) await editorView.save();
+        await this.getNoteEditorView(note, view)?.save();
         await this.trashSources(trash);
       }
     } catch {
@@ -317,8 +300,100 @@ export default class imageAutoUploadPlugin extends Plugin {
     }
   }
 
-  private getNoteEditorView(view: MarkdownView, note: TFile): MarkdownView | undefined {
-    if (view.file === note && view.getMode() === "source") return view;
+  private getUploadedImageChanges(
+    references: LocalImageReference[],
+    uploaded: ReadonlyMap<TFile, string>
+  ): ImageLinkChange[] {
+    return references.flatMap(reference => {
+      const url = uploaded.get(reference.file);
+      if (!url) return [];
+      const { start, end } = reference;
+      const text = formatUploadedImage(reference, this.handleName(reference.name), url);
+      return [{ start, end, text }];
+    });
+  }
+
+  private async writeImageChanges(
+    note: TFile,
+    snapshot: string,
+    changes: ImageLinkChange[],
+    view?: MarkdownView
+  ): Promise<boolean> {
+    // 网络请求或读盘期间可能换笔记或编辑原文。只对仍与快照一致的文本应用改动。
+    const editor = this.getNoteEditorView(note, view)?.editor;
+    if (editor) {
+      if (editor.getValue() !== snapshot) return false;
+      editor.transaction({
+        changes: changes.map(({ start, end, text }) => ({
+          from: editor.offsetToPos(start),
+          to: editor.offsetToPos(end),
+          text,
+        })),
+      });
+      return true;
+    }
+
+    let written = false;
+    await this.app.vault.process(note, content => {
+      if (content !== snapshot || this.getNoteEditorView(note)) return content;
+      written = true;
+      return changes.reduceRight(
+        (text, change) => text.slice(0, change.start) + change.text + text.slice(change.end),
+        content
+      );
+    });
+    return written;
+  }
+
+  private async replaceImagesInOtherNotes(
+    note: TFile,
+    uploaded: ReadonlyMap<TFile, string>
+  ) {
+    const imageFiles = new Set(uploaded.keys());
+    const imagePaths = new Set([...imageFiles].map(file => file.path));
+    const relatedPaths = getRelatedNotePaths(this.app, note.path, imagePaths);
+    let updated = 0;
+    let skipped = 0;
+
+    for (const path of relatedPaths) {
+      const otherNote = this.app.vault.getFileByPath(path);
+      if (!otherNote || otherNote.extension !== "md") continue;
+      if (this.uploadsInProgress.has(otherNote)) {
+        skipped++;
+        continue;
+      }
+
+      // 锁住同一篇笔记，避免它与另一项上传同时回写。
+      this.uploadsInProgress.add(otherNote);
+      try {
+        const editor = this.getNoteEditorView(otherNote)?.editor;
+        const snapshot = editor?.getValue() ?? await this.app.vault.read(otherNote);
+        const references = getLocalImageReferences(this.app, otherNote, snapshot, imageFiles);
+        if (!references) {
+          skipped++;
+          continue;
+        }
+        if (!references.length) continue;
+
+        const changes = this.getUploadedImageChanges(references, uploaded);
+        if (await this.writeImageChanges(otherNote, snapshot, changes)) updated++;
+        else skipped++;
+      } catch {
+        skipped++;
+      } finally {
+        this.uploadsInProgress.delete(otherNote);
+      }
+    }
+
+    if (updated || skipped) {
+      new Notice(t("Other note replacement summary")
+        .replace("{updated}", String(updated))
+        .replace("{skipped}", String(skipped)));
+    }
+  }
+
+  private getNoteEditorView(note: TFile, view?: MarkdownView): MarkdownView | undefined {
+    if (view?.file === note && view.getMode() === "source") return view;
     return this.app.workspace.getLeavesOfType("markdown")
       .map(leaf => leaf.view)
       .find((candidate): candidate is MarkdownView =>

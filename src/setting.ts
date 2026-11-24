@@ -12,6 +12,7 @@ export interface PluginSettings {
   workOnNetWork: boolean;
   newWorkBlackDomains: string;
   applyImage: boolean;
+  replaceInOtherNotes: boolean;
   deleteSource: boolean;
   imageDesc: "origin" | "none" | "removeDefault";
   remoteServerMode: boolean;
@@ -28,6 +29,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   workOnNetWork: false,
   applyImage: true,
   newWorkBlackDomains: "",
+  replaceInOtherNotes: false,
   deleteSource: false,
   imageDesc: "origin",
   remoteServerMode: false,
@@ -210,6 +212,18 @@ export class SettingTab extends PluginSettingTab {
           .onChange(async value => {
             this.plugin.settings.applyImage = value;
             this.display();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName(t("Replace images in other notes"))
+      .setDesc(t("Replace images in other notes description"))
+      .addToggle(toggle =>
+        toggle
+          .setValue(this.plugin.settings.replaceInOtherNotes)
+          .onChange(async value => {
+            this.plugin.settings.replaceInOtherNotes = value;
             await this.plugin.saveSettings();
           })
       );

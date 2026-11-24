@@ -1,8 +1,8 @@
 {
   "name": "obsidian-yuhanbo-image_upload",
-  "version": "4.1.2",
+  "version": "4.2.0",
   "type": "module",
-  "description": "This plugin uploads images from your clipboard by picGo and embeds uploaded image to your note",
+  "description": "支持批量上传本地图片和右键上传单张图片，上传后自动替换笔记中的图片链接.",
   "main": "main.js",
   "scripts": {
     "dev": "rollup --config rollup.config.js -w",

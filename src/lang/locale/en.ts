@@ -61,5 +61,9 @@ export default {
   "Image upload summary": "Uploaded {uploaded} local image(s). Failed {failed}.",
   "Could not update image links in the note": "Could not update image links in the note.",
   "Could not trash the local image": "Could not trash the local image.",
-  upload: "Upload",
+
+  "Replace images in other notes": "Replace images in other notes",
+  "Replace images in other notes description": "After Upload all images, replace references to the same attachments in other notes. Upload image affects only the current note.",
+  "Other note replacement summary": "Updated image links in {updated} other note(s). Skipped {skipped}.",
+  upload: "Upload image",
 };

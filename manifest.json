@@ -1,9 +1,9 @@
 {
   "id": "yuhanbo-image-upload",
   "name": "yuhanbo-image-upload",
-  "version": "4.1.2",
+  "version": "4.2.0",
   "minAppVersion": "1.7.2",
-  "description": "Upload local images to an image host and replace their references in notes.",
+  "description": "支持批量上传本地图片和右键上传单张图片，上传后自动替换笔记中的图片链接.",
   "author": "余汉波",
   "authorUrl": "https://github.com/yuhanbo758",
   "isDesktopOnly": true

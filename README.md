@@ -50,13 +50,15 @@ image-auto-upload: true
 
 Open a note and run **Upload all images** from the command palette (`Ctrl+P`). The command uploads local Markdown images and wiki embeds, then replaces each successful reference with its hosted URL. Existing network images are preserved. Repeated references upload once, and failed attachments keep their original links.
 
+Enable **Replace images in other notes** in the plugin settings to reuse the uploaded links in other notes that embed the same attachments. The switch is off by default.
+
 ## download all internet to local
 
 press `ctrl+P` and input `download all images`，enter, then will auto download all internet images to loacl, only test in win10
 
 ## Upload image by contextMenu
 
-Right-click a local image in Live Preview and select **Upload**. The plugin uses the attachment's full vault path, so other attachments with the same filename are unaffected.
+Right-click a local image in Live Preview and select **Upload image**. This updates the current note. The plugin uses the attachment's full vault path, so other attachments with the same filename are unaffected.
 
 ## Support drag-and-drop
 

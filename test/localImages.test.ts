@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { App, EmbedCache, TFile } from "obsidian";
-import { formatUploadedImage, getLocalImageReferences, getUploadedUrl } from "../src/localImages";
+import { formatUploadedImage, getLocalImageReferences, getRelatedNotePaths, getUploadedUrl } from "../src/localImages";
 
 function embed(link: string, original: string, line: number, col = 0, displayText?: string): EmbedCache {
   return {
@@ -79,5 +79,34 @@ describe("getUploadedUrl", () => {
     for (const invalid of [undefined, [], ["file:///a.png"], ["https:foo"], ["bad"], ["https://host.test/a.png", "https://host.test/b.png"]]) {
       expect(getUploadedUrl(invalid)).toBeUndefined();
     }
+  });
+});
+
+describe("cross-note references", () => {
+  it("selects indexed notes by exact attachment path and excludes the origin", () => {
+    const app = { metadataCache: { resolvedLinks: {
+      "A.md": { "first/a.png": 1, "B.md": 1 },
+      "B.md": { "first/a.png": 2 },
+      "C.md": { "first/b.png": 1 },
+      "D.md": { "second/a.png": 1 },
+      "E.md": { "https://example.org/a.png": 1 },
+    } } } as unknown as App;
+
+    expect(getRelatedNotePaths(app, "A.md", new Set(["first/a.png", "first/b.png"])))
+      .toEqual(["B.md", "C.md"]);
+  });
+
+  it("updates only the selected local attachment even if another image index is stale", () => {
+    const target = "![[B/同名 图片.png|80]]";
+    const unrelated = "![[../A/同名 图片.png]]";
+    const { app, note, second } = fixture([
+      embed("B/同名 图片.png", target, 0, 0, "80"),
+      embed("../A/同名 图片.png", unrelated, 1),
+    ]);
+    const content = target + "\nAn unrelated edit.\n" + unrelated;
+
+    const refs = getLocalImageReferences(app, note, content, new Set([second]));
+    expect(refs?.map(ref => ref.file)).toEqual([second]);
+    expect(refs?.map(ref => ref.source)).toEqual([target]);
   });
 });
