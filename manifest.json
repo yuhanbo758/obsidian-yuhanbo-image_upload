@@ -1,10 +1,10 @@
 {
   "id": "yuhanbo-image-upload",
   "name": "yuhanbo-image-upload",
-  "version": "4.1.1",
+  "version": "4.1.2",
   "minAppVersion": "1.7.2",
   "description": "Upload local images to an image host and replace their references in notes.",
-  "author": "Yuhanbo (based on work by renmu)",
-  "authorUrl": "https://github.com/renmu123/obsidian-image-auto-upload-plugin",
+  "author": "余汉波",
+  "authorUrl": "https://github.com/yuhanbo758",
   "isDesktopOnly": true
 }
