@@ -51,12 +51,15 @@ jobs:
 
       - name: Prepare the release version
         id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           version="$(node scripts/prepare-release.mjs --sync-manifest)"
           # 只用尚未占用的版本，避免复用已发布标签或手工创建的标签。
-          while git show-ref --verify --quiet "refs/tags/$version"; do
+          while git show-ref --verify --quiet "refs/tags/$version" \
+            || gh release view "$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; do
             version="$(node scripts/prepare-release.mjs --bump-patch)"
           done
           echo "version=$version" >> "$GITHUB_OUTPUT"
