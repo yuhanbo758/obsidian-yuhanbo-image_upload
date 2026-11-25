@@ -2,6 +2,8 @@
 
 这是基于 [renmu123 的 Image auto upload](https://github.com/renmu123/obsidian-image-auto-upload-plugin) 开发的桌面版，保留原项目的 MIT 许可。支持通过 PicGo、PicList 和 PicGo-Core 上传图片。
 
+上游维护者 renmu123 已[公开同意将此派生版独立提交至社区目录](https://github.com/renmu123/obsidian-image-auto-upload-plugin/issues/193#issuecomment-7152842363)。
+
 手动安装时，将构建出的 `main.js` 和 `manifest.json` 放入笔记库下的 `.obsidian/plugins/yuhanbo-image-upload/`，再到 Obsidian 的「第三方插件」中启用 `yuhanbo-image-upload`。
 
 ## 隐私与外部服务

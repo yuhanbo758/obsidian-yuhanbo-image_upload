@@ -4,6 +4,8 @@
 
 A desktop fork of [renmu123’s Image auto upload](https://github.com/renmu123/obsidian-image-auto-upload-plugin), distributed under the original MIT license. It uses PicGo, PicList, or PicGo-Core to upload images.
 
+Upstream maintainer renmu123 gave [public permission for this fork's community listing](https://github.com/renmu123/obsidian-image-auto-upload-plugin/issues/193#issuecomment-7152842363).
+
 For manual installation, copy the built `main.js` and `manifest.json` to `.obsidian/plugins/yuhanbo-image-upload/` in your vault, then enable `yuhanbo-image-upload` in Community plugins.
 
 ## Privacy and external services
