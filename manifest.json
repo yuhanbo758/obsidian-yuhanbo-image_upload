@@ -1,7 +1,7 @@
 {
   "id": "yuhanbo-image-upload",
   "name": "yuhanbo-image-upload",
-  "version": "4.2.0",
+  "version": "4.2.1",
   "minAppVersion": "1.7.2",
   "description": "支持批量上传本地图片和右键上传单张图片，上传后自动替换笔记中的图片链接.",
   "author": "余汉波",
