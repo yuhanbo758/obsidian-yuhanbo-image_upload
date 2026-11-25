@@ -43,7 +43,7 @@ jobs:
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version-file: '.node-version'
           cache: pnpm
 
       - name: Install dependencies
@@ -106,5 +106,42 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "$RELEASE_VERSION" main.js manifest.json \
-            --target "$RELEASE_COMMIT" --title "$RELEASE_VERSION" --generate-notes
+          # 先完整上传并核对草稿，GitHub 短暂失败时继续同一份 Release。
+          retry() {
+            local delay
+            for delay in 0 3 8 15; do
+              sleep "$delay"
+              if "$@"; then return 0; fi
+            done
+            return 1
+          }
+
+          ensure_draft() {
+            if gh release view "$RELEASE_VERSION" --json targetCommitish >/dev/null 2>&1; then
+              return 0
+            fi
+            gh release create "$RELEASE_VERSION" --draft \
+              --target "$RELEASE_COMMIT" --title "$RELEASE_VERSION" --generate-notes
+          }
+
+          upload_asset() {
+            local asset="$1" expected="$2" actual
+            actual="$(gh release view "$RELEASE_VERSION" --json assets \
+              --jq ".assets[] | select(.name == \"$asset\") | .digest")" || return 1
+            if [ -z "$actual" ]; then
+              gh release upload "$RELEASE_VERSION" "$asset" || return 1
+              actual="$(gh release view "$RELEASE_VERSION" --json assets \
+                --jq ".assets[] | select(.name == \"$asset\") | .digest")" || return 1
+            fi
+            test "$actual" = "$expected"
+          }
+
+          retry ensure_draft
+          target="$(retry gh release view "$RELEASE_VERSION" --json targetCommitish --jq '.targetCommitish')"
+          test "$target" = "$RELEASE_COMMIT"
+          for asset in main.js manifest.json; do
+            digest="$(sha256sum "$asset" | cut -d ' ' -f 1)"
+            retry upload_asset "$asset" "sha256:$digest"
+          done
+          retry gh release edit "$RELEASE_VERSION" --draft=false
+          test "$(retry gh release view "$RELEASE_VERSION" --json isDraft --jq '.isDraft')" = false

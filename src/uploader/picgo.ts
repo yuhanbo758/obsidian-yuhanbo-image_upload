@@ -1,11 +1,10 @@
 import { join, extname } from "path-browserify";
 import { requestUrl, normalizePath, FileSystemAdapter } from "obsidian";
 
-import { bufferToArrayBuffer } from "../utils";
 import { payloadGenerator } from "../payloadGenerator";
 
 import type imageAutoUploadPlugin from "../main";
-import type { Image } from "../types";
+import type { Image, PicListImage } from "../types";
 import type { Response, Uploader } from "./types";
 import type { PluginSettings } from "../setting";
 
@@ -14,7 +13,7 @@ interface PicGoResponse {
   message?: string;
   msg?: string;
   result: string[] | string;
-  fullResult?: Record<string, any>[];
+  fullResult?: PicListImage[];
 }
 
 export default class PicGoUploader implements Uploader {
@@ -30,35 +29,15 @@ export default class PicGoUploader implements Uploader {
     let response: Awaited<ReturnType<typeof requestUrl>>;
 
     if (this.settings.remoteServerMode) {
-      const files = [];
-      for (let i = 0; i < fileList.length; i++) {
-        if (typeof fileList[i] === "string") {
-          const { readFile } = require("fs");
-          const file = fileList[i] as string;
-
-          const buffer: Buffer = await new Promise((resolve, reject) => {
-            readFile(file, (err: any, data: any) => {
-              if (err) {
-                reject(err);
-              }
-              resolve(data);
-            });
-          });
-          const arrayBuffer = bufferToArrayBuffer(buffer);
-          files.push(new File([arrayBuffer], file));
-        } else {
-          const timestamp = new Date().getTime();
-          const image = fileList[i] as Image;
-
-          if (!image.file) continue;
-          const arrayBuffer = await this.plugin.app.vault.adapter.readBinary(
-            image.file.path
-          );
-
-          files.push(
-            new File([arrayBuffer], timestamp + extname(image.file.path))
-          );
-        }
+      const files: File[] = [];
+      for (const image of fileList) {
+        if (typeof image === "string" || !image.file) continue;
+        const arrayBuffer = await this.plugin.app.vault.adapter.readBinary(
+          image.file.path
+        );
+        files.push(
+          new File([arrayBuffer], Date.now() + extname(image.file.path))
+        );
       }
       response = await this.uploadFileByData(files);
     } else {
@@ -112,7 +91,12 @@ export default class PicGoUploader implements Uploader {
     return response;
   }
 
-  private async uploadFileByClipboard(fileList?: FileList): Promise<any> {
+  async uploadDroppedFiles(files: File[]): Promise<Response> {
+    // 远程上传直接使用拖入的文件对象，无需按外部路径重新读取。
+    return this.handleResponse(await this.uploadFileByData(files));
+  }
+
+  private async uploadFileByClipboard(fileList?: FileList): Promise<Response> {
     let res: Awaited<ReturnType<typeof requestUrl>>;
 
     if (this.settings.remoteServerMode) {
@@ -140,10 +124,9 @@ export default class PicGoUploader implements Uploader {
   private async handleResponse(
     response: Awaited<ReturnType<typeof requestUrl>>
   ): Promise<Response> {
-    const data = (await response.json) as PicGoResponse;
+    const data = response.json as PicGoResponse;
 
     if (response.status !== 200) {
-      console.error(response, data);
       return {
         success: false,
         msg: data.msg || data.message,
@@ -151,7 +134,6 @@ export default class PicGoUploader implements Uploader {
       };
     }
     if (data.success === false) {
-      console.error(response, data);
       return {
         success: false,
         msg: data.msg || data.message,
@@ -166,7 +148,7 @@ export default class PicGoUploader implements Uploader {
         ...(this.settings.uploadedImages || []),
         ...uploadUrlFullResultList,
       ];
-      this.plugin.saveSettings();
+      await this.plugin.saveSettings();
     }
 
     return {

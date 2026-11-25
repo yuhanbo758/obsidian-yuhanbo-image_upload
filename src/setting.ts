@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting, Notice, Platform } from "obsidian";
 import imageAutoUploadPlugin from "./main";
 import { t } from "./lang/helpers";
+import type { PicListImage } from "./types";
 
 export interface PluginSettings {
   uploadByClipSwitch: boolean;
@@ -16,7 +17,7 @@ export interface PluginSettings {
   deleteSource: boolean;
   imageDesc: "origin" | "none" | "removeDefault";
   remoteServerMode: boolean;
-  [propName: string]: any;
+  uploadedImages?: PicListImage[];
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {

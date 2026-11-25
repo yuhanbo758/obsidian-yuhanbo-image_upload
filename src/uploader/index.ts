@@ -1,4 +1,5 @@
 import { Platform, Notice } from "obsidian";
+import { webUtils } from "electron";
 
 import PicGoUploader from "./picgo";
 import PicGoCoreUploader from "./picgoCore";
@@ -40,6 +41,21 @@ export class UploaderManager {
     }
 
     return res;
+  }
+
+  async uploadDroppedFiles(files: File[]) {
+    if (
+      this.plugin.settings.remoteServerMode &&
+      this.uploader instanceof PicGoUploader
+    ) {
+      return this.uploader.uploadDroppedFiles(files);
+    }
+
+    const paths = files.map(file => file.path || webUtils?.getPathForFile(file));
+    if (paths.some(path => !path)) {
+      throw new Error("Could not resolve a dropped image path");
+    }
+    return this.upload(paths);
   }
   async uploadByClipboard(fileList?: FileList) {
     if (Platform.isMobileApp && !this.plugin.settings.remoteServerMode) {

@@ -19,7 +19,7 @@ export default class Helper {
     this.app = app;
   }
 
-  getFrontmatterValue(key: string, defaultValue: any = undefined) {
+  getFrontmatterValue(key: string, defaultValue?: unknown): unknown {
     const file = this.app.workspace.getActiveFile();
     if (!file) {
       return undefined;
@@ -28,7 +28,7 @@ export default class Helper {
     const cache = this.app.metadataCache.getCache(path);
 
     let value = defaultValue;
-    if (cache?.frontmatter && cache.frontmatter.hasOwnProperty(key)) {
+    if (cache?.frontmatter && Object.hasOwn(cache.frontmatter, key)) {
       value = cache.frontmatter[key];
     }
     return value;

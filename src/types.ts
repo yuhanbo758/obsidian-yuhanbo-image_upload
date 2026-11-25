@@ -6,3 +6,8 @@ export interface Image {
   source: string;
   file?: TFile | null;
 }
+
+export interface PicListImage {
+  imgUrl: string;
+  [key: string]: unknown;
+}

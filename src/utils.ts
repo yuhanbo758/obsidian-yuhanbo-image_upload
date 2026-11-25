@@ -20,7 +20,7 @@ const IMAGE_EXT_LIST = [
 export function isAnImage(ext: string) {
   return IMAGE_EXT_LIST.includes(ext.toLowerCase());
 }
-export function isAssetTypeAnImage(path: string): Boolean {
+export function isAssetTypeAnImage(path: string): boolean {
   return isAnImage(extname(path));
 }
 
@@ -36,9 +36,7 @@ export async function streamToString(stream: Readable) {
 }
 
 export function getUrlAsset(url: string) {
-  return (url = url.substr(1 + url.lastIndexOf("/")).split("?")[0]).split(
-    "#"
-  )[0];
+  return url.slice(1 + url.lastIndexOf("/")).split(/[?#]/)[0];
 }
 
 export function getLastImage(list: string[]) {

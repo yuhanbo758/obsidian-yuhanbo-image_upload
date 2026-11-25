@@ -86,7 +86,9 @@ export default class imageAutoUploadPlugin extends Plugin {
         let leaf = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (leaf) {
           if (!checking) {
-            downloadAllImageFiles(this);
+            void downloadAllImageFiles(this).catch((error: unknown) => {
+              new Notice(error instanceof Error ? error.message : "Download failed");
+            });
           }
           return true;
         }
@@ -146,7 +148,7 @@ export default class imageAutoUploadPlugin extends Plugin {
               const markdownUrl = markdownMatch[1];
               if (
                 this.settings.uploadedImages?.find(
-                  (item: { imgUrl: string }) => item.imgUrl === markdownUrl
+                  item => item.imgUrl === markdownUrl
                 )
               ) {
                 this.addRemoveMenu(menu, markdownUrl, editor);
@@ -166,7 +168,7 @@ export default class imageAutoUploadPlugin extends Plugin {
         .onClick(async () => {
           try {
             const selectedItem = this.settings.uploadedImages?.find(
-              (item: { imgUrl: string }) => item.imgUrl === imgPath
+              item => item.imgUrl === imgPath
             );
             if (selectedItem) {
               const res = await this.picGoDeleter.deleteImage([selectedItem]);
@@ -178,9 +180,9 @@ export default class imageAutoUploadPlugin extends Plugin {
                 }
                 this.settings.uploadedImages =
                   this.settings.uploadedImages.filter(
-                    (item: { imgUrl: string }) => item.imgUrl !== imgPath
+                    item => item.imgUrl !== imgPath
                   );
-                this.saveSettings();
+                await this.saveSettings();
               } else {
                 new Notice(t("Delete failed"));
               }
@@ -444,13 +446,13 @@ export default class imageAutoUploadPlugin extends Plugin {
     this.registerEvent(
       this.app.workspace.on(
         "editor-paste",
-        (evt: ClipboardEvent, editor: Editor, markdownView: MarkdownView) => {
+        (evt: ClipboardEvent, editor: Editor) => {
+          if (evt.defaultPrevented || !evt.clipboardData) return;
           const allowUpload = this.helper.getFrontmatterValue(
             "image-auto-upload",
             this.settings.uploadByClipSwitch
           );
 
-          let files = evt.clipboardData.files;
           if (!allowUpload) {
             return;
           }
@@ -470,16 +472,17 @@ export default class imageAutoUploadPlugin extends Plugin {
               );
 
             if (imageList.length !== 0) {
-              this.upload(imageList).then(res => {
-                let uploadUrlList = res.result;
-                this.replaceImage(imageList, uploadUrlList);
-              });
+              void this.upload(imageList)
+                .then(({ result }) => this.replaceImage(imageList, result))
+                .catch(() => {
+                  new Notice(t("Image upload failed. Check the uploader settings"));
+                });
             }
           }
 
           // 剪贴板中是图片时进行上传
           if (this.canUpload(evt.clipboardData)) {
-            this.uploadFileAndEmbedImgurImage(
+            void this.uploadFileAndEmbedImgurImage(
               editor,
               async () => {
                 const { result } = await this.uploadByClipboard(
@@ -494,7 +497,7 @@ export default class imageAutoUploadPlugin extends Plugin {
                 return url;
               },
               evt.clipboardData
-            ).catch();
+            );
             evt.preventDefault();
           }
         }
@@ -503,9 +506,9 @@ export default class imageAutoUploadPlugin extends Plugin {
     this.registerEvent(
       this.app.workspace.on(
         "editor-drop",
-        async (evt: DragEvent, editor: Editor, markdownView: MarkdownView) => {
+        async (evt: DragEvent, editor: Editor) => {
           // when ctrl key is pressed, do not upload image, because it is used to set local file
-          if (evt.ctrlKey) {
+          if (evt.defaultPrevented || evt.ctrlKey || !evt.dataTransfer) {
             return;
           }
           const allowUpload = this.helper.getFrontmatterValue(
@@ -517,32 +520,25 @@ export default class imageAutoUploadPlugin extends Plugin {
             return;
           }
 
-          let files = evt.dataTransfer.files;
-          if (files.length !== 0 && files[0].type.startsWith("image")) {
-            let sendFiles: Array<string> = [];
-            let files = evt.dataTransfer.files;
-            Array.from(files).forEach((item, index) => {
-              if (item.path) {
-                sendFiles.push(item.path);
-              } else {
-                const { webUtils } = require("electron");
-                const path = webUtils.getPathForFile(item);
-                sendFiles.push(path);
-              }
-            });
-            evt.preventDefault();
+          const files = Array.from(evt.dataTransfer.files).filter(
+            file => file.type.startsWith("image/") || isAssetTypeAnImage(file.name)
+          );
+          if (files.length === 0) return;
+          evt.preventDefault();
 
-            const data = await this.upload(sendFiles);
-
-            if (data.success) {
-              data.result.map((value: string) => {
-                let pasteId = (Math.random() + 1).toString(36).substr(2, 5);
-                this.insertTemporaryText(editor, pasteId);
-                this.embedMarkDownImage(editor, pasteId, value, files[0].name);
-              });
-            } else {
-              new Notice("Upload error");
+          try {
+            const data = await this.getUploader().uploadDroppedFiles(files);
+            if (!data.success) {
+              new Notice(t("Image upload failed. Check the uploader settings"));
+              return;
             }
+            data.result.forEach((value, index) => {
+              const pasteId = (Math.random() + 1).toString(36).slice(2, 7);
+              this.insertTemporaryText(editor, pasteId);
+              this.embedMarkDownImage(editor, pasteId, value, files[index]?.name);
+            });
+          } catch {
+            new Notice(t("Image upload failed. Check the uploader settings"));
           }
         }
       )
@@ -550,34 +546,25 @@ export default class imageAutoUploadPlugin extends Plugin {
   }
 
   canUpload(clipboardData: DataTransfer) {
-    this.settings.applyImage;
     const files = clipboardData.files;
     const text = clipboardData.getData("text");
 
     const hasImageFile =
       files.length !== 0 && files[0].type.startsWith("image");
-    if (hasImageFile) {
-      if (!!text) {
-        return this.settings.applyImage;
-      } else {
-        return true;
-      }
-    } else {
-      return false;
-    }
+    return hasImageFile && (!text || this.settings.applyImage);
   }
 
   async uploadFileAndEmbedImgurImage(
     editor: Editor,
-    callback: Function,
+    callback: () => Promise<string>,
     clipboardData: DataTransfer
   ) {
-    let pasteId = (Math.random() + 1).toString(36).substr(2, 5);
+    const pasteId = (Math.random() + 1).toString(36).slice(2, 7);
     this.insertTemporaryText(editor, pasteId);
     const name = clipboardData.files[0].name;
 
     try {
-      const url = await callback(editor, pasteId);
+      const url = await callback();
       this.embedMarkDownImage(editor, pasteId, url, name);
     } catch (e) {
       this.handleFailedUpload(editor, pasteId, e);
@@ -596,7 +583,7 @@ export default class imageAutoUploadPlugin extends Plugin {
   embedMarkDownImage(
     editor: Editor,
     pasteId: string,
-    imageUrl: any,
+    imageUrl: string,
     name: string = ""
   ) {
     let progressText = imageAutoUploadPlugin.progressTextFor(pasteId);
@@ -611,9 +598,12 @@ export default class imageAutoUploadPlugin extends Plugin {
     );
   }
 
-  handleFailedUpload(editor: Editor, pasteId: string, reason: any) {
-    new Notice(reason);
-    console.error("Failed request: ", reason);
+  handleFailedUpload(editor: Editor, pasteId: string, reason: unknown) {
+    new Notice(
+      reason instanceof Error
+        ? reason.message
+        : t("Image upload failed. Check the uploader settings")
+    );
     let progressText = imageAutoUploadPlugin.progressTextFor(pasteId);
     imageAutoUploadPlugin.replaceFirstOccurrence(
       editor,

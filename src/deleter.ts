@@ -1,6 +1,6 @@
-import { IStringKeyMap } from "./utils";
 import { requestUrl } from "obsidian";
 import imageAutoUploadPlugin from "./main";
+import type { PicListImage } from "./types";
 
 export class PicGoDeleter {
   plugin: imageAutoUploadPlugin;
@@ -9,7 +9,7 @@ export class PicGoDeleter {
     this.plugin = plugin;
   }
 
-  async deleteImage(configMap: IStringKeyMap<any>[]) {
+  async deleteImage(configMap: PicListImage[]): Promise<{ success?: boolean }> {
     const response = await requestUrl({
       url: this.plugin.settings.deleteServer,
       method: "POST",
@@ -18,7 +18,6 @@ export class PicGoDeleter {
         list: configMap,
       }),
     });
-    const data = response.json;
-    return data;
+    return response.json as { success?: boolean };
   }
 }
