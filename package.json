@@ -1,6 +1,6 @@
 {
   "name": "obsidian-yuhanbo-image_upload",
-  "version": "4.2.1",
+  "version": "4.2.2",
   "type": "module",
   "description": "支持批量上传本地图片和右键上传单张图片，上传后自动替换笔记中的图片链接.",
   "main": "main.js",

@@ -481,16 +481,16 @@ export default class imageAutoUploadPlugin extends Plugin {
           if (this.canUpload(evt.clipboardData)) {
             this.uploadFileAndEmbedImgurImage(
               editor,
-              async (editor: Editor, pasteId: string) => {
-                let res: any;
-                res = await this.uploadByClipboard(evt.clipboardData.files);
-
-                if (res.code !== 0) {
-                  this.handleFailedUpload(editor, pasteId, res.msg);
-                  return;
+              async () => {
+                const { result } = await this.uploadByClipboard(
+                  evt.clipboardData.files
+                );
+                const url = result?.[0];
+                if (!url) {
+                  throw new Error(
+                    t("Image upload failed. Check the uploader settings")
+                  );
                 }
-                const url = res.data;
-
                 return url;
               },
               evt.clipboardData

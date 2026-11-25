@@ -9,6 +9,8 @@ import type imageAutoUploadPlugin from "./main";
 
 export async function downloadAllImageFiles(plugin: imageAutoUploadPlugin) {
   const activeFile = plugin.app.workspace.getActiveFile();
+  if (!activeFile?.parent) return;
+  const activeFolder = activeFile.parent.path;
   const folderPath = await plugin.app.fileManager.getAvailablePathForAttachment(
     ""
   );
@@ -31,13 +33,12 @@ export async function downloadAllImageFiles(plugin: imageAutoUploadPlugin) {
 
     const response = await download(plugin, url, folderPath, name);
     if (response.ok) {
-      const activeFolder = plugin.app.workspace.getActiveFile().parent.path;
-
+      // 两端都以库根目录为基准，避免库根笔记的相对路径混入进程工作目录。
       imageArray.push({
         source: file.source,
         name: name,
         path: normalizePath(
-          relative(normalizePath(activeFolder), normalizePath(response.path))
+          relative(join("/", activeFolder), join("/", response.path))
         ),
       });
     }
@@ -51,7 +52,7 @@ export async function downloadAllImageFiles(plugin: imageAutoUploadPlugin) {
   });
 
   const currentFile = plugin.app.workspace.getActiveFile();
-  if (activeFile.path !== currentFile.path) {
+  if (activeFile.path !== currentFile?.path) {
     new Notice(t("File has been changedd, download failure"));
     return;
   }
@@ -95,7 +96,7 @@ async function download(
       path = normalizePath(join(folderPath, `${uuid()}.${type.ext}`));
     }
 
-    plugin.app.vault.adapter.writeBinary(path, response.arrayBuffer);
+    await plugin.app.vault.adapter.writeBinary(path, response.arrayBuffer);
     return {
       ok: true,
       msg: "ok",
